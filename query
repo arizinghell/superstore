@@ -1,0 +1,371 @@
+-------------- daily report -----------------------------
+create view `store_dwh.report_daily` as
+with productfix as(
+  SELECT DISTINCT productid, FIRST_VALUE(productname) OVER(PARTITION BY productid ORDER BY productid) as productname, FIRST_VALUE(category) OVER(PARTITION BY productid ORDER BY productid) as category, FIRST_VALUE(subcategory) OVER(PARTITION BY productid ORDER BY productid) as subcategory
+from `supersetbinar.product`
+)
+SELECT
+  p.category
+  ,p.subcategory
+  ,p.productname
+  ,c.customername
+  ,c.segment
+  ,o.orderdate
+  ,o.shipdate
+  ,o.shipmode
+  ,o.country
+  ,o.city
+  ,o.state
+  ,o.postalcode
+  ,REPLACE(o.region, 'Southn','South') as region
+  ,o.sales
+  ,o.quantity
+  ,o.discount
+  ,o.profit
+FROM
+  `supersetbinar.order` AS o
+JOIN
+  `supersetbinar.customer` AS c
+ON
+  o.customerid=c.customerid
+JOIN
+  productfix AS p
+ON
+  o.productid=p.productid;
+-------------------------------------------------------------------------
+---------------- monthly report --------------------------------------
+create view `store_dwh.report_monthly` as
+with productfix as(
+  SELECT DISTINCT productid, FIRST_VALUE(productname) OVER(PARTITION BY productid ORDER BY productid) as productname, FIRST_VALUE(category) OVER(PARTITION BY productid ORDER BY productid) as category, FIRST_VALUE(subcategory) OVER(PARTITION BY productid ORDER BY productid) as subcategory
+from `supersetbinar.product`
+)
+SELECT
+  p.category
+  ,p.subcategory
+  ,p.productname
+  ,c.customername
+  ,c.segment
+  ,EXTRACT(MONTH FROM orderdate) AS month
+  ,EXTRACT(YEAR FROM orderdate) AS year
+  ,o.shipmode
+  ,o.country
+  ,o.city
+  ,o.state
+  ,o.postalcode
+  ,REPLACE(o.region, 'Southn','South') as region
+  ,SUM(o.sales) AS sales
+  ,SUM(o.quantity) AS quantity
+  ,AVG(o.discount) AS discount
+  ,SUM(o.profit) AS profit
+FROM
+  `supersetbinar.order` o
+JOIN
+  `supersetbinar.customer` AS c
+ON
+  o.customerid=c.customerid
+JOIN
+ productfix AS p
+ON
+  o.productid=p.productid
+GROUP BY
+  1,2,3,4,5,6,7,8,9,10,11,12,13
+ORDER BY
+  year, month;
+-----------------------------------------------------------------
+----------------------quarter report-----------------------------------
+create view if not exists `store_dwh.report_quarterly` AS
+with productfix as(
+  SELECT DISTINCT productid, FIRST_VALUE(productname) OVER(PARTITION BY productid ORDER BY productid) as productname, FIRST_VALUE(category) OVER(PARTITION BY productid ORDER BY productid) as category, FIRST_VALUE(subcategory) OVER(PARTITION BY productid ORDER BY productid) as subcategory
+from `supersetbinar.product`
+)
+  SELECT
+  p.category
+  ,p.subcategory
+  ,p.productname
+  ,c.customername
+  ,c.segment
+  ,EXTRACT(QUARTER FROM orderdate) AS quarter
+  ,EXTRACT(YEAR FROM orderdate) AS year
+  ,o.shipmode
+  ,o.country
+  ,o.city
+  ,o.state
+  ,o.postalcode
+  ,REPLACE(o.region, 'Southn','South') as region
+  ,SUM(o.sales) AS sales
+  ,SUM(o.quantity) AS quantity
+  ,AVG(o.discount) AS discount
+  ,SUM(o.profit) AS profit
+FROM
+  `supersetbinar.order` o
+JOIN
+  `supersetbinar.customer` AS c
+ON
+  o.customerid=c.customerid
+JOIN
+ productfix AS p
+ON
+  o.productid=p.productid
+GROUP BY
+  1,2,3,4,5,6,7,8,9,10,11,12,13
+ORDER BY
+  year, quarter;
+  -------------------------------------------------------------------------
+  ---------------------annual report--------------------------------------
+create view `store_dwh.report_yearly` as
+  with productfix as(
+  SELECT DISTINCT productid, FIRST_VALUE(productname) OVER(PARTITION BY productid ORDER BY productid) as productname, FIRST_VALUE(category) OVER(PARTITION BY productid ORDER BY productid) as category, FIRST_VALUE(subcategory) OVER(PARTITION BY productid ORDER BY productid) as subcategory
+from `supersetbinar.product`
+)
+  SELECT
+   p.category
+  ,p.subcategory
+  ,p.productname
+  ,c.customername
+  ,c.segment
+  ,EXTRACT(YEAR FROM orderdate) AS year
+  ,o.shipmode
+  ,o.country
+  ,o.city
+  ,o.state
+  ,o.postalcode
+  ,o.region
+  ,SUM(o.sales) AS sales
+  ,SUM(o.quantity) AS quantity
+  ,AVG(o.discount) AS discount
+  ,SUM(o.profit) AS profit
+FROM
+  `supersetbinar.order` o
+JOIN
+  `supersetbinar.customer` AS c
+ON
+  o.customerid=c.customerid
+JOIN
+  productfix AS p
+ON
+  o.productid=p.productid
+GROUP BY
+  1,2,3,4,5,6,7,8,9,10,11,12
+ORDER BY
+  year
+----------------------------------------------------------------------
+-------------- actual vs budget ---------------------------------------
+create view `store_dwh.actual_vs_budget` as
+ select
+  EXTRACT(MONTH FROM orderdate) AS `month`
+  ,EXTRACT(QUARTER FROM orderdate) AS `quarter`
+ ,EXTRACT(YEAR FROM orderdate) AS `year`
+  ,sum(sales) as sales
+ ,sum(sales)*1.1 as target
+  from `store_dwh.report_daily`
+  group by 1,2,3
+  order by  3,2,1
+-------------------------------------------------------------------------------
+------------------------growth monthly------------------------------------
+create view `store_dwh.growth_month` as
+  WITH monthly_sales AS (
+  SELECT
+    EXTRACT(MONTH FROM orderdate) AS `month`,
+    EXTRACT(YEAR FROM orderdate) AS `year`,
+    SUM(sales) AS sales,
+    CAST(SUM(quantity) as INT) as qty,
+    SUM(profit) as profit,
+    FROM `store_dwh.report_daily`
+  GROUP BY 1,2
+  ORDER BY 2,1
+)
+SELECT
+  month,
+  year,
+  sales,
+  qty,
+  profit,
+  ROUND((sales - LAG(sales, 1) OVER (ORDER BY year, month)) / LAG(sales, 1) OVER (ORDER BY year, month)*100,2) AS sales_growth,
+  ROUND((qty - LAG(qty, 1) OVER (ORDER BY year, month)) / LAG(qty, 1) OVER (ORDER BY year, month)*100,2) AS qty_growth,
+  ROUND((profit - LAG(profit, 1) OVER (ORDER BY year, month)) / LAG(profit, 1) OVER (ORDER BY year, month)*100,2) AS profit_growth
+FROM monthly_sales
+order by 2,1
+-------------------------------------------------------------------------
+-----------------------growth quarter------------------------------------
+create view `store_dwh.growth_quarter` as
+  WITH quarter_sales AS (
+  SELECT
+    EXTRACT(quarter FROM orderdate) AS `quarter`,
+    EXTRACT(YEAR FROM orderdate) AS `year`,
+    SUM(sales) AS sales,
+    CAST(SUM(quantity) as INT) as qty,
+    SUM(profit) as profit,
+    FROM `store_dwh.report_daily`
+  GROUP BY 1,2
+  ORDER BY 2,1
+)
+SELECT
+  quarter,
+  year,
+  sales,
+  qty,
+  profit,
+  ROUND((sales - LAG(sales, 1) OVER (ORDER BY year, quarter)) / LAG(sales, 1) OVER (ORDER BY year, quarter)*100,2) AS sales_growth,
+  ROUND((qty - LAG(qty, 1) OVER (ORDER BY year, quarter)) / LAG(qty, 1) OVER (ORDER BY year, quarter)*100,2) AS qty_growth,
+  ROUND((profit - LAG(profit, 1) OVER (ORDER BY year, quarter)) / LAG(profit, 1) OVER (ORDER BY year, quarter)*100,2) AS profit_growth
+FROM quarter_sales
+order by 2,1
+-------------------------------------------------------------------------
+------------------------- growth year ----------------------------------
+create view `store_dwh.growth_year` as
+  WITH quarter_sales AS (
+  SELECT
+   EXTRACT(YEAR FROM orderdate) AS `year`,
+    SUM(sales) AS sales,
+     CAST(SUM(quantity) as INT) as qty,
+    SUM(profit) as profit,
+    FROM `store_dwh.report_daily`
+  GROUP BY 1
+  ORDER BY 1
+)
+SELECT
+  year,
+  sales,
+  qty,
+  profit,
+  ROUND((sales - LAG(sales, 1) OVER (ORDER BY year)) / LAG(sales, 1) OVER (ORDER BY year)*100,2) AS sales_growth,
+  ROUND((qty - LAG(qty, 1) OVER (ORDER BY year)) / LAG(qty, 1) OVER (ORDER BY year)*100,2) AS qty_growth,
+  ROUND((profit - LAG(profit, 1) OVER (ORDER BY year)) / LAG(profit, 1) OVER (ORDER BY year)*100,2) AS profit_growth
+FROM quarter_sales
+order by 1
+------------------------------------------------------------------------------------------
+create view `store_dwh.segment_customer` as
+SELECT 
+  customername
+  ,segment
+  ,extract(quarter from orderdate) as Quarter
+  ,extract(year from orderdate) as Year
+  ,shipmode
+  ,country
+  ,city
+  ,state
+  ,postalcode
+  ,region
+  ,round(sum(sales),2) as sales,
+  CASE 
+    WHEN segment = 'Consumer' THEN 
+      CASE 
+        WHEN sum(sales) < 200 THEN 'Bronze' 
+        WHEN sum(sales) > 500 THEN 'Gold' 
+        ELSE 'Silver' 
+      END 
+    WHEN segment = 'Corporate' THEN 
+      CASE 
+        WHEN sum(sales) < 200 THEN 'Bronze' 
+        WHEN sum(sales)  > 500 THEN 'Gold' 
+        ELSE 'Silver' 
+      END 
+    WHEN segment = 'Home Office' THEN 
+      CASE 
+        WHEN sum(sales) < 200 THEN 'Bronze' 
+        WHEN sum(sales)  > 500 THEN 'Gold' 
+        ELSE 'Silver' 
+      END 
+    ELSE 'Unknown'
+  END AS CustomerSegmentation
+FROM 
+  `store_dwh.report_daily` AS o
+GROUP BY 
+  1,2,3,4,5,6,7,8,9,10
+ORDER BY 
+  customername;
+  ------------------------------------------------------------------------
+  ------------------------- segmentation product ------------------------------
+  create view `store_dwh.segment_product` as
+  SELECT 
+  category
+  ,subcategory
+  ,productname
+  ,extract(month from orderdate) as month
+  ,extract(year from orderdate) as year
+  ,shipmode
+  ,country
+  ,city
+  ,state
+  ,postalcode
+  ,region
+  ,CAST(sum(quantity) AS INT) AS quantity
+
+  ,CASE 
+   
+        WHEN sum(quantity) < 5 THEN '3rd Product' 
+        WHEN sum(quantity) between 5 and 10 THEN '2nd Product' 
+        WHEN sum(quantity) > 10 THEN '1st Product' 
+        ELSE 'unknown' 
+   
+  END AS ProductSegmentation
+FROM 
+  `store_dwh.report_daily`
+GROUP BY 
+  1,2,3,4,5,6,7,8,9,10,11
+ORDER BY 
+  category;
+  -----------------------------------------------------------------------
+  -----------------------segment city----------------------------------
+  create view `store_dwh.segment_city` as
+  SELECT 
+  extract(month from orderdate) as month
+  ,extract(year from orderdate) as year
+  ,shipmode
+  ,city
+ ,round(sum(sales),2) as sales
+  ,CASE 
+    WHEN sum(sales) < 1000 THEN 'Kategori I' 
+    WHEN sum(sales) < 2000 THEN 'Kategori II' 
+    WHEN sum(sales) > 2000 THEN 'Kategori III' 
+    ELSE 'unknown' 
+  END AS CitySegmentation
+FROM 
+  `store_dwh.report_daily`
+GROUP BY 
+  1,2,3,4
+ORDER BY 
+ 2,1
+ -----------------------------------------------------------------------------
+ ------------------------loss reporting--------------------------------------
+  create view `store_dwh.report_loss` as
+   with productfix as(
+  SELECT DISTINCT productid, FIRST_VALUE(productname) OVER(PARTITION BY productid ORDER BY productid) as productname, FIRST_VALUE(category) OVER(PARTITION BY productid ORDER BY productid) as category, FIRST_VALUE(subcategory) OVER(PARTITION BY productid ORDER BY productid) as subcategory
+from `supersetbinar.product`
+)
+SELECT
+  p.category
+  ,p.subcategory
+  ,p.productname
+  ,c.customername
+  ,c.segment
+  ,EXTRACT(MONTH FROM orderdate) AS month
+  ,EXTRACT(QUARTER FROM orderdate) AS quarter
+  ,EXTRACT(YEAR FROM orderdate) AS year
+  ,o.shipmode
+  ,o.country
+  ,o.city
+  ,o.state
+  ,o.postalcode
+  ,REPLACE(o.region, 'Southn','South') as region
+  ,SUM(o.sales) AS sales
+  ,SUM(o.quantity) AS quantity
+  ,SUM(o.discount)as discount
+  ,SUM(o.profit) AS profit
+FROM
+  `supersetbinar.order` o
+JOIN
+  `supersetbinar.customer` AS c
+ON
+  o.customerid=c.customerid
+JOIN
+ productfix AS p
+ON
+  o.productid=p.productid
+  where profit < 0
+GROUP BY
+  1,2,3,4,5,6,7,8,9,10,11,12,13,14
+ORDER BY
+  year,quarter, month;
+  ------------------------end of query---------------------------------
+
